@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Lista de Tarefas</title>
+    
+    <!-- Link para o Web App Manifest, que define a identidade do app -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Cor do tema para a barra de endereço do navegador móvel -->
+    <meta name="theme-color" content="#ffffff">
+    <!-- Ícone para iOS -->
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body.dragging-touch { overflow: hidden; }
+        .dragging { opacity: 0.5; }
+        .task-placeholder { display: block; background-color: #e0f2fe; border: 2px dashed #38bdf8; border-radius: 0.5rem; margin: 0.75rem 0; padding: 1.25rem; text-align: center; color: #0284c7; font-weight: 500; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 pb-24">
+
+    <div class="max-w-3xl mx-auto mt-6 sm:mt-12 p-4 sm:p-6 bg-white rounded-xl shadow-lg">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-center text-slate-900">Minha Lista de Tarefas</h1>
+            <div id="task-summary" class="text-center text-slate-500 mt-4 text-sm sm:text-base font-medium"></div>
+        </header>
+
+        <form id="form-nova-tarefa" class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-8 p-4 border rounded-lg bg-slate-50">
+            <input type="text" id="input-nova-tarefa" placeholder="Adicionar na Caixa de Entrada" class="sm:col-span-3 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" required>
+            <input type="date" id="input-nova-data" class="sm:col-span-2 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-slate-500">
+            <select id="input-nova-prioridade" class="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <option value="baixa">Baixa</option>
+                <option value="media" selected>Média</option>
+                <option value="alta">Alta</option>
+            </select>
+            <button type="submit" class="sm:col-span-6 w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 transition shadow">Adicionar Tarefa</button>
+        </form>
+
+        <div id="board-container" class="space-y-8">
+            <div class="list-wrapper"><h2 class="text-xl font-bold text-slate-800 mb-3">📥 Caixa de Entrada</h2><ul id="inbox" class="task-list space-y-3 p-2 border rounded-lg min-h-[80px] bg-slate-50"></ul></div>
+            <div class="list-wrapper"><h2 class="text-xl font-bold text-slate-800 mb-3">☀️ Para o Dia</h2><ul id="dia" class="task-list space-y-3 p-2 border rounded-lg min-h-[80px] bg-slate-50"></ul></div>
+            <div class="list-wrapper"><h2 class="text-xl font-bold text-slate-800 mb-3">🗓️ Para a Semana</h2><ul id="semana" class="task-list space-y-3 p-2 border rounded-lg min-h-[80px] bg-slate-50"></ul></div>
+            <div class="list-wrapper"><h2 class="text-xl font-bold text-slate-800 mb-3">⏳ Pendentes</h2><ul id="pendentes" class="task-list space-y-3 p-2 border rounded-lg min-h-[80px] bg-slate-50"></ul></div>
+        </div>
+    </div>
+
+    <script>
+    const formNovaTarefa = document.getElementById('form-nova-tarefa');
+    const inputNovaTarefa = document.getElementById('input-nova-tarefa');
+    const inputNovaData = document.getElementById('input-nova-data');
+    const inputNovaPrioridade = document.getElementById('input-nova-prioridade');
+    const taskLists = document.querySelectorAll('.task-list');
+    const taskSummaryElement = document.getElementById('task-summary');
+    let draggedItem = null;
+
+    const getInitialData = () => ({ inbox: [], dia: [], semana: [], pendentes: [] });
+    const carregarDados = () => JSON.parse(localStorage.getItem('meuBoardDeTarefas')) || getInitialData();
+    const salvarDados = (dados) => localStorage.setItem('meuBoardDeTarefas', JSON.stringify(dados));
+
+    const renderizarBoard = () => {
+        const dados = carregarDados();
+        const prioridadeValor = { 'alta': 3, 'media': 2, 'baixa': 1 };
+        const nomesDasListas = { inbox: 'Caixa de Entrada', dia: 'Para o Dia', semana: 'Para a Semana', pendentes: 'Pendentes' };
+        taskSummaryElement.innerHTML = Object.keys(dados).map(key => `${nomesDasListas[key]} (${dados[key].length})`).join(' &middot; ');
+        taskLists.forEach(listElement => {
+            listElement.innerHTML = '';
+            const listKey = listElement.id;
+            const tarefasDaLista = dados[listKey] || [];
+            tarefasDaLista.sort((a, b) => {
+                const pA = prioridadeValor[a.priority], pB = prioridadeValor[b.priority];
+                if (pA !== pB) return pB - pA;
+                if (a.date && b.date) return new Date(a.date) - new Date(b.date);
+                if (a.date) return -1; if (b.date) return 1;
+                return 0;
+            });
+            if (tarefasDaLista.length === 0) {
+                listElement.innerHTML = `<li class="text-slate-400 text-center italic p-2 select-none">Lista vazia</li>`;
+            } else {
+                tarefasDaLista.forEach(tarefa => criarElementoTarefa(tarefa, listElement));
+            }
+        });
+    };
+
+    const criarElementoTarefa = (tarefa, listElement) => {
+        const itemLista = document.createElement('li');
+        itemLista.dataset.id = tarefa.id;
+        itemLista.draggable = true;
+        const estilosPrioridade = { alta: 'border-l-red-500', media: 'border-l-yellow-400', baixa: 'border-l-green-500' };
+        itemLista.className = `flex items-center justify-between bg-white p-3 rounded-lg shadow-sm border-l-4 cursor-grab ${estilosPrioridade[tarefa.priority]}`;
+        itemLista.addEventListener('dragstart', handleDragStart);
+        itemLista.addEventListener('dragend', handleDragEnd);
+        itemLista.addEventListener('touchstart', handleTouchStart, { passive: true });
+        const viewContainer = document.createElement('div');
+        viewContainer.className = 'flex-grow';
+        const textoSpan = document.createElement('span');
+        textoSpan.textContent = tarefa.text;
+        textoSpan.className = 'text-slate-800';
+        viewContainer.appendChild(textoSpan);
+        if (tarefa.date) {
+            const [ano, mes, dia] = tarefa.date.split('-');
+            const dataSpan = document.createElement('span');
+            dataSpan.textContent = `${dia}/${mes}/${ano}`;
+            dataSpan.className = 'block text-xs text-blue-600 font-semibold mt-1';
+            viewContainer.appendChild(dataSpan);
+        }
+        itemLista.appendChild(viewContainer);
+        const botoesContainer = document.createElement('div');
+        botoesContainer.className = 'flex items-center gap-2 flex-shrink-0 ml-4';
+        const botaoEditar = document.createElement('button');
+        botaoEditar.innerHTML = '✏️';
+        botaoEditar.title = 'Editar';
+        botaoEditar.className = 'text-sm p-1 rounded-md hover:bg-yellow-200 transition';
+        botaoEditar.onclick = (e) => { e.stopPropagation(); iniciarEdicao(tarefa.id, listElement.id); };
+        const botaoConcluir = document.createElement('button');
+        botaoConcluir.innerHTML = '✔️';
+        botaoConcluir.title = 'Concluir';
+        botaoConcluir.className = 'text-sm p-1 rounded-md hover:bg-green-200 transition';
+        botaoConcluir.onclick = (e) => { e.stopPropagation(); removerTarefa(tarefa.id); };
+        botoesContainer.appendChild(botaoEditar);
+        botoesContainer.appendChild(botaoConcluir);
+        itemLista.appendChild(botoesContainer);
+        listElement.appendChild(itemLista);
+    };
+
+    const adicionarTarefa = (e) => { e.preventDefault(); const t=inputNovaTarefa.value.trim(); if(t==="")return; const n=carregarDados(); n.inbox.push({id:`task-${Date.now()}`,text:t,date:inputNovaData.value||null,priority:inputNovaPrioridade.value}),salvarDados(n),renderizarBoard(),formNovaTarefa.reset(),inputNovaPrioridade.value="media" };
+    const removerTarefa = (id) => { const dados=carregarDados(); for(const key in dados) dados[key] = dados[key].filter(t => t.id !== id); salvarDados(dados); renderizarBoard(); };
+    const iniciarEdicao = (id, listId) => { const tarefa=carregarDados()[listId].find(t=>t.id===id), itemLista=document.querySelector(`li[data-id='${id}']`); itemLista.draggable=false; itemLista.innerHTML=`<div class="w-full space-y-2"><input type="text" value="${tarefa.text}" class="edit-text w-full p-2 border rounded"><div class="grid grid-cols-2 gap-2"><input type="date" value="${tarefa.date||""}" class="edit-date p-2 border rounded text-slate-500"><select class="edit-priority p-2 border rounded"><option value="baixa" ${tarefa.priority==="baixa"?"selected":""}>Baixa</option><option value="media" ${tarefa.priority==="media"?"selected":""}>Média</option><option value="alta" ${tarefa.priority==="alta"?"selected":""}>Alta</option></select></div><select class="edit-list w-full p-2 border rounded bg-slate-100"><option value="inbox" ${listId==="inbox"?"selected":""}>Mover para: Caixa de Entrada</option><option value="dia" ${listId==="dia"?"selected":""}>Mover para: Para o Dia</option><option value="semana" ${listId==="semana"?"selected":""}>Mover para: Para a Semana</option><option value="pendentes" ${listId==="pendentes"?"selected":""}>Mover para: Pendentes</option></select><div class="flex justify-end gap-2 mt-2"><button class="cancel-btn bg-gray-500 text-white text-sm font-semibold px-3 py-1 rounded hover:bg-gray-600">Cancelar</button><button class="save-btn bg-blue-600 text-white text-sm font-semibold px-3 py-1 rounded hover:bg-blue-700">Salvar</button></div></div>`; itemLista.querySelector(".save-btn").onclick=()=>salvarEdicao(id,listId); itemLista.querySelector(".cancel-btn").onclick=()=>renderizarBoard(); };
+    const salvarEdicao = (id, origemListId) => { const itemLista=document.querySelector(`li[data-id='${id}']`), novoTexto=itemLista.querySelector(".edit-text").value.trim(); if(novoTexto==="")return; const dados=carregarDados(), tarefaIndex=dados[origemListId].findIndex(t=>t.id===id), tarefa=dados[origemListId][tarefaIndex]; tarefa.text=novoTexto; tarefa.date=itemLista.querySelector(".edit-date").value||null; tarefa.priority=itemLista.querySelector(".edit-priority").value; const destinoListId=itemLista.querySelector(".edit-list").value; if(destinoListId!==origemListId){dados[origemListId].splice(tarefaIndex,1); dados[destinoListId].push(tarefa);} salvarDados(dados); renderizarBoard(); };
+
+    function handleDragStart(e) { draggedItem = this; setTimeout(() => this.classList.add('dragging'), 0); }
+    function handleDragEnd() { this.classList.remove('dragging'); }
+    taskLists.forEach(list => { list.addEventListener('dragover', e => { e.preventDefault(); const placeholder = getPlaceholder(); list.appendChild(placeholder); }); list.addEventListener('dragleave', () => document.querySelector('.task-placeholder')?.remove()); list.addEventListener('drop', handleDrop); });
+    function handleDrop(e) { e.preventDefault(); document.querySelector('.task-placeholder')?.remove(); if (draggedItem) moveTask(draggedItem.dataset.id, this.id); }
+    let touchDragElement = null;
+    function handleTouchStart(e) { touchDragElement = this; this.classList.add('dragging'); document.body.classList.add('dragging-touch'); document.addEventListener('touchmove', handleTouchMove, { passive: false }); document.addEventListener('touchend', handleTouchEnd); }
+    function handleTouchMove(e) { e.preventDefault(); const touch = e.touches[0]; const targetElement = document.elementFromPoint(touch.clientX, touch.clientY); const targetList = targetElement ? targetElement.closest('.task-list') : null; document.querySelector('.task-placeholder')?.remove(); if (targetList) targetList.appendChild(getPlaceholder()); }
+    function handleTouchEnd(e) { document.querySelector('.task-placeholder')?.remove(); const touch = e.changedTouches[0]; const targetElement = document.elementFromPoint(touch.clientX, touch.clientY); const targetList = targetElement ? targetElement.closest('.task-list') : null; if (touchDragElement && targetList) moveTask(touchDragElement.dataset.id, targetList.id); touchDragElement?.classList.remove('dragging'); document.body.classList.remove('dragging-touch'); touchDragElement = null; document.removeEventListener('touchmove', handleTouchMove); document.removeEventListener('touchend', handleTouchEnd); }
+    function getPlaceholder() { const existing = document.querySelector('.task-placeholder'); if (existing) return existing; const placeholder = document.createElement('li'); placeholder.className = 'task-placeholder'; placeholder.textContent = 'Solte aqui'; return placeholder; }
+    function moveTask(taskId, targetListId) { const dados = carregarDados(); let tarefaMovida = null; for (const key in dados) { const index = dados[key].findIndex(t => t.id === taskId); if (index > -1) { if (key === targetListId) return; tarefaMovida = dados[key].splice(index, 1)[0]; break; } } if (tarefaMovida) { dados[targetListId].push(tarefaMovida); salvarDados(dados); renderizarBoard(); } }
+
+    document.addEventListener('DOMContentLoaded', renderizarBoard);
+    formNovaTarefa.addEventListener('submit', adicionarTarefa);
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').then(registration => {
+                console.log('ServiceWorker registrado com sucesso:', registration.scope);
+            }).catch(error => {
+                console.log('Falha no registro do ServiceWorker:', error);
+            });
+        });
+    }
+    </script>
+</body>
+</html>
